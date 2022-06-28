@@ -15,11 +15,16 @@ from datasets.pascal_voc import pascal_voc
 from datasets.coco import coco
 from datasets.imagenet import imagenet
 from datasets.vg import vg
-
+from datasets.spacenet import spacenet
 import numpy as np
 
 # Set up voc_<year>_<split>
-for year in ['2007', '2012']:
+for year in ['2007', '2012','2013','2014']:
+  for split in ['train', 'val', 'trainval', 'test']:
+    name = 'spacenet_{}_{}'.format(year, split)
+    __sets[name] = (lambda split=split, year=year: spacenet(split, year))
+
+for year in ['2007', '2012','2013','2014']:
   for split in ['train', 'val', 'trainval', 'test']:
     name = 'voc_{}_{}'.format(year, split)
     __sets[name] = (lambda split=split, year=year: pascal_voc(split, year))

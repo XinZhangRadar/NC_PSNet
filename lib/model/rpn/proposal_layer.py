@@ -36,7 +36,9 @@ class _ProposalLayer(nn.Module):
         self._anchors = torch.from_numpy(generate_anchors(scales=np.array(scales), 
             ratios=np.array(ratios))).float()
         self._num_anchors = self._anchors.size(0)
-
+        
+        self.view_size = 32+1
+        
         # rois blob: holds R regions of interest, each is a 5-tuple
         # (n, x1, y1, x2, y2) specifying an image batch index n and a
         # rectangle (x1, y1, x2, y2)
@@ -64,10 +66,12 @@ class _ProposalLayer(nn.Module):
 
         # the first set of _num_anchors channels are bg probs
         # the second set are the fg probs
+        #pdb.set_trace();
         scores = input[0][:, self._num_anchors:, :, :]
         bbox_deltas = input[1]
-        im_info = input[2]
-        cfg_key = input[3]
+        # view = input[2]
+        im_info = input[3]
+        cfg_key = input[4]
 
         pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
         post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
@@ -94,6 +98,7 @@ class _ProposalLayer(nn.Module):
 
         # Transpose and reshape predicted bbox transformations to get them
         # into the same order as the anchors:
+        #pdb.set_trace();
 
         bbox_deltas = bbox_deltas.permute(0, 2, 3, 1).contiguous()
         bbox_deltas = bbox_deltas.view(batch_size, -1, 4)
@@ -102,10 +107,14 @@ class _ProposalLayer(nn.Module):
         scores = scores.permute(0, 2, 3, 1).contiguous()
         scores = scores.view(batch_size, -1)
 
+        # view
+        # view = view.permute(0, 2, 3, 1).contiguous()
+        # view = view.view(batch_size, -1, self.view_size)
+
         # Convert anchors into proposals via bbox transformations
         proposals = bbox_transform_inv(anchors, bbox_deltas, batch_size)
 
-        # 2. clip predicted boxes to image
+        # 2. clip predicted boxes to image (according to)
         proposals = clip_boxes(proposals, im_info, batch_size)
         # proposals = clip_boxes_batch(proposals, im_info, batch_size)
 
@@ -122,14 +131,18 @@ class _ProposalLayer(nn.Module):
         
         scores_keep = scores
         proposals_keep = proposals
+        # view_keep = view
         _, order = torch.sort(scores_keep, 1, True)
 
         output = scores.new(batch_size, post_nms_topN, 5).zero_()
+        #score_out = scores.new(batch_size, post_nms_topN).zero_()
+        # view_out = view.new(batch_size, post_nms_topN,self.view_size).zero_()
         for i in range(batch_size):
             # # 3. remove predicted boxes with either height or width < threshold
             # # (NOTE: convert min_size to input image scale stored in im_info[2])
             proposals_single = proposals_keep[i]
             scores_single = scores_keep[i]
+            # view_single = view_keep[i]
 
             # # 4. sort all (proposal, score) pairs by score from highest to lowest
             # # 5. take top pre_nms_topN (e.g. 6000)
@@ -140,25 +153,42 @@ class _ProposalLayer(nn.Module):
 
             proposals_single = proposals_single[order_single, :]
             scores_single = scores_single[order_single].view(-1,1)
+            # view_single = view_single[order_single, :]
+            
 
             # 6. apply nms (e.g. threshold = 0.7)
             # 7. take after_nms_topN (e.g. 300)
             # 8. return the top proposals (-> RoIs top)
-
-            keep_idx_i = nms(torch.cat((proposals_single, scores_single), 1), nms_thresh, force_cpu=not cfg.USE_GPU_NMS)
+            #pdb.set_trace();
+            #pdb.set_trace()
+            keep_idx_i = nms(torch.cat((proposals_single, scores_single), 1), nms_thresh, force_cpu=  cfg.USE_GPU_NMS)
             keep_idx_i = keep_idx_i.long().view(-1)
+
 
             if post_nms_topN > 0:
                 keep_idx_i = keep_idx_i[:post_nms_topN]
             proposals_single = proposals_single[keep_idx_i, :]
             scores_single = scores_single[keep_idx_i, :]
+            # view_single = view_single[keep_idx_i, :]
+
+            #pdb.set_trace()
 
             # padding 0 at the end.
             num_proposal = proposals_single.size(0)
             output[i,:,0] = i
             output[i,:num_proposal,1:] = proposals_single
-
-        return output
+            '''
+            try:
+                score_out[i,:keep_idx_i.shape.__getitem__(0)] = scores_single.view(-1)
+            except:
+                pdb.set_trace();
+            '''
+            # try:
+                # view_out[i,:num_proposal,:] = view_single
+            # except:    
+                # pdb.set_trace()
+        return output#,score_out
+        # ,view_out
 
     def backward(self, top, propagate_down, bottom):
         """This layer does not propagate gradients."""

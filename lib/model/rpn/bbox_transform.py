@@ -75,6 +75,7 @@ def bbox_transform_batch(ex_rois, gt_rois):
     return targets
 
 def bbox_transform_inv(boxes, deltas, batch_size):
+    #pdb.set_trace()
     widths = boxes[:, :, 2] - boxes[:, :, 0] + 1.0
     heights = boxes[:, :, 3] - boxes[:, :, 1] + 1.0
     ctr_x = boxes[:, :, 0] + 0.5 * widths
@@ -179,6 +180,7 @@ def bbox_overlaps_batch(anchors, gt_boxes):
 
         N = anchors.size(0)
         K = gt_boxes.size(1)
+        #pdb.set_trace()
 
         anchors = anchors.view(1, N, 4).expand(batch_size, N, 4).contiguous()
         gt_boxes = gt_boxes[:,:,:4].contiguous()

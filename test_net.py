@@ -15,7 +15,9 @@ import argparse
 import pprint
 import pdb
 import time
+
 import cv2
+
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -28,17 +30,204 @@ from model.rpn.bbox_transform import clip_boxes
 from model.nms.nms_wrapper import nms
 from model.rpn.bbox_transform import bbox_transform_inv
 from model.utils.net_utils import save_net, load_net, vis_detections
-from model.faster_rcnn.vgg16 import vgg16
+
+#from model.faster_rcnn.vgg16 import vgg16
 from model.faster_rcnn.resnet import resnet
-
-import pdb
-
+from model.faster_rcnn.geo_distance import *
 try:
     xrange          # Python 2
 except NameError:
     xrange = range  # Python 3
+view_size =26+1
+def view_label( _view_id,num_view):
+    '''
+    input: azimuth
+           elevation
+    out  : view label
+    注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+    ''' 
+    #a_intervals = list(([0,15],[15,75],[75,105],[105,165],[165,195],[195,255],[255,285],[285,345],[345,360]))# pascal
+
+    #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+    
+    #e_intervals = list(([0,11],[11,25],[25,35],[35,40],[40,45],[45,48],[48,52],[52,55]))
+
+    #pdb.set_trace()
+    view_dict = {'1030010003D22F00':7,'1030010003993E00':6,'1030010002B7D800':5,'1030010002649200':4,'1030010003127500':3,'103001000307D800':2,'1030010003315300':1,
+    '103001000392F600':0,'10300100023BC100':8,'1030010003CAF100':9,'10300100039AB000':10,'1030010003C92000':11,'103001000352C200':12,'1030010003472200':13,'10300100036D5200':14,
+    '1030010003697400':15,'1030010003895500':16,'1030010003832800':17,'10300100035D1B00':18,'1030010003CCD700':19,'1030010003713C00':20,'10300100033C5200':21,'1030010003492700':22,
+    '10300100039E6200':23,'1030010003BDDC00':24,'1030010003CD4300':25,'1030010003193D00':25}
+    view_list = (-32,-29,-25,-21,-16,-13,-10,-7,8,10,14,19,23,27,30,34,36,39,42,44,46,47,49,50,52,53)    
+    view_label = view_dict[_view_id]
+    azimuth = 0
+    elevation = view_list[view_label]
 
 
+    distance = np.zeros(num_view,dtype=np.float32)
+
+    for view_int in range(len(view_list)) :
+        
+        mid_e = view_list[view_int]
+        mid_a = 0
+        try:
+          distance[view_int] = getDistance(mid_e,mid_a,elevation,azimuth)
+        except:
+          pdb.set_trace()
+    distance[-1]=view_label
+    return view_label, distance
+def view_label_18(_view_id,num_view):
+    '''
+    input: azimuth
+           elevation
+    out  : view label
+    注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+    ''' 
+    #a_intervals = list(([0,15],[15,75],[75,105],[105,165],[165,195],[195,255],[255,285],[285,345],[345,360]))# pascal
+
+    #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+    #pdb.set_trace()
+    view_dict = {'1030010003D22F00':7,'1030010003993E00':6,'1030010002B7D800':5,'1030010002649200':4,'1030010003127500':3,'103001000307D800':2,'1030010003315300':1,
+    '103001000392F600':0,'10300100023BC100':8,'1030010003CAF100':9,'10300100039AB000':10,'1030010003C92000':11,'103001000352C200':12,'1030010003472200':13,'10300100036D5200':14,
+    '1030010003697400':15,'1030010003895500':16,'1030010003832800':17,'10300100035D1B00':18,'1030010003CCD700':19,'1030010003713C00':20,'10300100033C5200':21,'1030010003492700':22,
+    '10300100039E6200':23,'1030010003BDDC00':24,'1030010003CD4300':25,'1030010003193D00':25}
+    view_list = (-32,-29,-25,-21,-16,-13,-10,-7,8,10,14,19,23,27,30,34,36,39,42,44,46,47,49,50,52,53) 
+    e_intervals = [[i,i+5] for i in range(-35,55,5)]
+
+    #e_intervals = [[i,i+10] for i in range(-35,55,10)]
+
+
+    azimuth = 0
+    elevation = view_list[view_dict[_view_id]]
+
+    distance = np.zeros(num_view,dtype=np.float32)
+
+    for view_int in range(len(e_intervals)) :
+        interval_l = e_intervals[view_int][0] 
+        interval_r = e_intervals[view_int][1]
+        if (elevation > interval_l) and (elevation <= interval_r) :
+            view_label = view_int
+        
+        mid_e = (interval_l+interval_r )/2
+        mid_a = 0
+        distance[view_int] = getDistance(mid_e,mid_a,elevation,azimuth)
+    
+    #pdb.set_trace()
+    distance[-1]=view_label
+    return view_label, distance
+
+def view_label_9( _view_id,num_view):
+    '''
+    input: azimuth
+           elevation
+    out  : view label
+    注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+    ''' 
+    #a_intervals = list(([0,15],[15,75],[75,105],[105,165],[165,195],[195,255],[255,285],[285,345],[345,360]))# pascal
+
+    #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+    #pdb.set_trace()
+    view_dict = {'1030010003D22F00':7,'1030010003993E00':6,'1030010002B7D800':5,'1030010002649200':4,'1030010003127500':3,'103001000307D800':2,'1030010003315300':1,
+    '103001000392F600':0,'10300100023BC100':8,'1030010003CAF100':9,'10300100039AB000':10,'1030010003C92000':11,'103001000352C200':12,'1030010003472200':13,'10300100036D5200':14,
+    '1030010003697400':15,'1030010003895500':16,'1030010003832800':17,'10300100035D1B00':18,'1030010003CCD700':19,'1030010003713C00':20,'10300100033C5200':21,'1030010003492700':22,
+    '10300100039E6200':23,'1030010003BDDC00':24,'1030010003CD4300':25,'1030010003193D00':25}
+    view_list = (-32,-29,-25,-21,-16,-13,-10,-7,8,10,14,19,23,27,30,34,36,39,42,44,46,47,49,50,52,53) 
+    e_intervals = [[i,i+10] for i in range(-35,55,10)]
+
+    #e_intervals = [[i,i+10] for i in range(-35,55,10)]
+
+
+    azimuth = 0
+    elevation = view_list[view_dict[_view_id]]
+
+    distance = np.zeros(num_view,dtype=np.float32)
+
+    for view_int in range(len(e_intervals)) :
+        interval_l = e_intervals[view_int][0] 
+        interval_r = e_intervals[view_int][1]
+        if (elevation > interval_l) and (elevation <= interval_r) :
+            view_label = view_int
+        
+        mid_e = (interval_l+interval_r )/2
+        mid_a = 0
+        distance[view_int] = getDistance(mid_e,mid_a,elevation,azimuth)
+    
+    #pdb.set_trace()
+    distance[-1]=view_label
+    return view_label, distance
+
+def view_label_5( _view_id,num_view):
+    '''
+    input: azimuth
+           elevation
+    out  : view label
+    注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+    ''' 
+    #a_intervals = list(([0,15],[15,75],[75,105],[105,165],[165,195],[195,255],[255,285],[285,345],[345,360]))# pascal
+
+    #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+    #pdb.set_trace()
+    #e_intervals = [[i,i+10] for i in range(-35,55,10)]
+
+    #e_intervals = [[i,i+10] for i in range(-35,55,10)]
+    view_dict = {'1030010003D22F00':7,'1030010003993E00':6,'1030010002B7D800':5,'1030010002649200':4,'1030010003127500':3,'103001000307D800':2,'1030010003315300':1,
+    '103001000392F600':0,'10300100023BC100':8,'1030010003CAF100':9,'10300100039AB000':10,'1030010003C92000':11,'103001000352C200':12,'1030010003472200':13,'10300100036D5200':14,
+    '1030010003697400':15,'1030010003895500':16,'1030010003832800':17,'10300100035D1B00':18,'1030010003CCD700':19,'1030010003713C00':20,'10300100033C5200':21,'1030010003492700':22,
+    '10300100039E6200':23,'1030010003BDDC00':24,'1030010003CD4300':25,'1030010003193D00':25}
+    view_list = (-32,-29,-25,-21,-16,-13,-10,-7,8,10,14,19,23,27,30,34,36,39,42,44,46,47,49,50,52,53) 
+    e_intervals = [[-35,-25],[-25,0],[0,25],[25,40],[40,55]]
+    azimuth = 0
+    elevation = view_list[view_dict[_view_id]]
+
+
+
+    distance = np.zeros(num_view,dtype=np.float32)
+
+    for view_int in range(len(e_intervals)) :
+        interval_l = e_intervals[view_int][0] 
+        interval_r = e_intervals[view_int][1]
+        if (elevation >= interval_l) and (elevation < interval_r) :
+            view_label = view_int
+        
+        mid_e = (interval_l+interval_r )/2
+        mid_a = 0
+        distance[view_int] = getDistance(mid_e,mid_a,elevation,azimuth)
+    
+    #pdb.set_trace()
+    distance[-1]=view_label
+    return view_label, distance
+
+def view_label_1(_view_id,num_view):
+    '''
+    input: azimuth
+           elevation
+    out  : view label
+    注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+    ''' 
+    #a_intervals = list(([0,15],[15,75],[75,105],[105,165],[165,195],[195,255],[255,285],[285,345],[345,360]))# pascal
+
+    #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+    #pdb.set_trace()
+    #e_intervals = [[i,i+10] for i in range(-35,55,10)]
+    view_label = 0
+    distance = np.zeros(num_view,dtype=np.float32)
+    distance[-1] = view_label
+
+    #e_intervals = [[i,i+10] for i in range(-35,55,10)]
+
+    return view_label,distance
+def view_fliter(_view_id):
+    '''
+        input: poses[ix,:]  = [distance,azimuth,elevation]
+        return view[ix] = view ->[1,32]
+    '''
+    num_view = 26+1
+    #pdb.set_trace()
+
+    distance = np.zeros((num_view),dtype=np.float32)
+
+
+    view, distance = view_label(_view_id,num_view)
+    return view, distance
 def parse_args():
   """
   Parse input arguments
@@ -74,6 +263,9 @@ def parse_args():
   parser.add_argument('--parallel_type', dest='parallel_type',
                       help='which part of model to parallel, 0: all, 1: model before roi pooling',
                       default=0, type=int)
+  parser.add_argument('--checkname', dest='checkname',
+                      help='checkname to load network',
+                      default=' ', type=str)
   parser.add_argument('--checksession', dest='checksession',
                       help='checksession to load model',
                       default=1, type=int)
@@ -97,8 +289,8 @@ if __name__ == '__main__':
 
   args = parse_args()
 
-  print('Called with args:')
-  print(args)
+  #print('Called with args:')
+  #print(args)
 
   if torch.cuda.is_available() and not args.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
@@ -115,7 +307,7 @@ if __name__ == '__main__':
   elif args.dataset == "coco":
       args.imdb_name = "coco_2014_train+coco_2014_valminusminival"
       args.imdbval_name = "coco_2014_minival"
-      args.set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]']
+      args.set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]']
   elif args.dataset == "imagenet":
       args.imdb_name = "imagenet_train"
       args.imdbval_name = "imagenet_val"
@@ -124,8 +316,21 @@ if __name__ == '__main__':
       args.imdb_name = "vg_150-50-50_minitrain"
       args.imdbval_name = "vg_150-50-50_minival"
       args.set_cfgs = ['ANCHOR_SCALES', '[4, 8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]']
+  elif args.dataset == "pascal3d":
+      args.imdb_name = "voc_2012_trainval"
+      args.imdbval_name = "voc_2012_test"
+      args.set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
 
+  elif args.dataset == "objectnet3d":
+      args.imdb_name = "voc_2007_trainval"
+      args.imdbval_name = "voc_2007_test"
+      args.set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '20']
+  elif args.dataset == "spacenet":
+      args.imdb_name = "spacenet_2007_trainval"
+      args.imdbval_name = "spacenet_2007_test"
+      args.set_cfgs = ['ANCHOR_SCALES', '[8, 16, 32]', 'ANCHOR_RATIOS', '[0.5,1,2]', 'MAX_NUM_GT_BOXES', '200']   
   args.cfg_file = "cfgs/{}_ls.yml".format(args.net) if args.large_scale else "cfgs/{}.yml".format(args.net)
+  
 
   if args.cfg_file is not None:
     cfg_from_file(args.cfg_file)
@@ -144,21 +349,32 @@ if __name__ == '__main__':
   input_dir = args.load_dir + "/" + args.net + "/" + args.dataset
   if not os.path.exists(input_dir):
     raise Exception('There is no input directory for loading network from ' + input_dir)
+  #args.checkname = 'psnet_L50_V26'
   load_name = os.path.join(input_dir,
-    'faster_rcnn_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
-
+    # 'faster_rcnn_fc_layer_50_view_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
+    # 'faster_rcnn_fc_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
+    #'faster_rcnn_fc_layer_30_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
+    # 'psnet_eccv_enhance_{}_{}_{}.pth'.format(args.checksession, args.checkepoch, args.checkpoint))
+    # 'psnet_eccv_221_1_{}_6676.pth'.format(args.checkepoch))
+    # 'psnet_eccv_no_vsloss_1_{}_6676.pth'.format(args.checkepoch))
+    'psnet_L{}_V26_1_{}_{}.pth'.format(args.checkname, args.checkepoch, args.checkpoint))
+    # 'psnet_eccv_256_1_8_6676.pth')
   # initilize the network here.
   if args.net == 'vgg16':
     fasterRCNN = vgg16(imdb.classes, pretrained=False, class_agnostic=args.class_agnostic)
   elif args.net == 'res101':
-    fasterRCNN = resnet(imdb.classes, 101, pretrained=False, class_agnostic=args.class_agnostic)
+    fasterRCNN = resnet(imdb.classes, 101, pretrained=False, class_agnostic=args.class_agnostic,k = int(args.checkname))
   elif args.net == 'res50':
-    fasterRCNN = resnet(imdb.classes, 50, pretrained=False, class_agnostic=args.class_agnostic)
+    fasterRCNN = resnet(imdb.classes, 50, pretrained=False, class_agnostic=args.class_agnostic,k = int(args.checkname))
+  elif args.net == 'res18':
+    fasterRCNN = resnet(imdb.classes, 18, pretrained=False, class_agnostic=args.class_agnostic,k = int(args.checkname))
+  elif args.net == 'res34':
+    fasterRCNN = resnet(imdb.classes, 34, pretrained=False, class_agnostic=args.class_agnostic,k = int(args.checkname))
   elif args.net == 'res152':
     fasterRCNN = resnet(imdb.classes, 152, pretrained=False, class_agnostic=args.class_agnostic)
   else:
     print("network is not defined")
-    pdb.set_trace()
+  #pdb.set_trace()
 
   fasterRCNN.create_architecture()
 
@@ -175,6 +391,7 @@ if __name__ == '__main__':
   im_info = torch.FloatTensor(1)
   num_boxes = torch.LongTensor(1)
   gt_boxes = torch.FloatTensor(1)
+  distance = torch.FloatTensor(1)
 
   # ship to cuda
   if args.cuda:
@@ -182,12 +399,14 @@ if __name__ == '__main__':
     im_info = im_info.cuda()
     num_boxes = num_boxes.cuda()
     gt_boxes = gt_boxes.cuda()
+    distance = distance.cuda()
 
   # make variable
   im_data = Variable(im_data)
   im_info = Variable(im_info)
   num_boxes = Variable(num_boxes)
   gt_boxes = Variable(gt_boxes)
+  distance = Variable(distance)
 
   if args.cuda:
     cfg.CUDA = True
@@ -196,16 +415,17 @@ if __name__ == '__main__':
     fasterRCNN.cuda()
 
   start = time.time()
-  max_per_image = 100
+  max_per_image = 200
 
   vis = args.vis
 
   if vis:
-    thresh = 0.05
+    thresh = 0.2
   else:
-    thresh = 0.0
+    thresh = 0
 
-  save_name = 'faster_rcnn_10'
+  #save_name = 'faster_rcnn_10'
+  save_name = 'psnet_L{}_V1_1_{}_{}_off.pth'.format(args.checkname, args.checkepoch, args.checkpoint)
   num_images = len(imdb.image_index)
   all_boxes = [[[] for _ in xrange(num_images)]
                for _ in xrange(imdb.num_classes)]
@@ -224,31 +444,67 @@ if __name__ == '__main__':
 
   fasterRCNN.eval()
   empty_array = np.transpose(np.array([[],[],[],[],[]]), (1,0))
+  all_time = []
+  det_all = 0
+  # with torch.cuda.device(0):
+  #   net = fasterRCNN
+  #   macs, params = get_model_complexity_info(net, (3, 224, 224), as_strings=True,
+  #                                           print_per_layer_stat=True, verbose=True)
+  #   print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+  #   print('{:<30}  {:<8}'.format('Number of parameters: ', params))
+
   for i in range(num_images):
+      #pdb.set_trace()
 
       data = next(data_iter)
       im_data.data.resize_(data[0].size()).copy_(data[0])
       im_info.data.resize_(data[1].size()).copy_(data[1])
       gt_boxes.data.resize_(data[2].size()).copy_(data[2])
       num_boxes.data.resize_(data[3].size()).copy_(data[3])
+      image_name = data[-1][0]
+      _view_id = image_name.split('/')[-1].split('_')[4]
+      view, distance_pt = view_fliter(_view_id)
+      distance_pt = torch.from_numpy(distance_pt)
+      distance.data.resize_(1, view_size).copy_(distance_pt)
+     
 
+      
       det_tic = time.time()
-      rois, cls_prob, bbox_pred, \
-      rpn_loss_cls, rpn_loss_box, \
-      RCNN_loss_cls, RCNN_loss_bbox, \
-      rois_label = fasterRCNN(im_data, im_info, gt_boxes, num_boxes)
+      with torch.no_grad():
+          rois,cls_prob, bbox_pred, \
+          rpn_loss_cls, rpn_loss_box,\
+          RCNN_loss_cls, RCNN_loss_bbox,\
+          rois_label = fasterRCNN(im_data, im_info, gt_boxes, num_boxes,distance)
+      def input_constructor(input_res):
+          dic  = dict(im_data=im_data, im_info=im_info, gt_boxes=gt_boxes, num_boxes=num_boxes,distance = distance)
+          return dic
+
+      with torch.cuda.device(0):
+        from ptflops import get_model_complexity_info
+        net = fasterRCNN
+        macs, params = get_model_complexity_info(net, (3, 900, 900), as_strings=True,input_constructor=input_constructor,
+                                                print_per_layer_stat=True, verbose=True)
+
+        print('{:<30}  {:<8}'.format('Computational complexity: ', macs))
+        print('{:<30}  {:<8}'.format('Number of parameters: ', params))
+      import pdb; pdb.set_trace()
 
       scores = cls_prob.data
       boxes = rois.data[:, :, 1:5]
+      args.class_agnostic = True
 
       if cfg.TEST.BBOX_REG:
           # Apply bounding-box regression deltas
+          #pdb.set_trace()
           box_deltas = bbox_pred.data
+          box_deltas = box_deltas.cuda()
           if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
           # Optionally normalize targets by a precomputed mean and stdev
             if args.class_agnostic:
-                box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
-                           + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+                try:
+                  box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() + torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS).cuda()
+                except:
+                  pdb.set_trace() 
                 box_deltas = box_deltas.view(1, -1, 4)
             else:
                 box_deltas = box_deltas.view(-1, 4) * torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS).cuda() \
@@ -259,7 +515,8 @@ if __name__ == '__main__':
           pred_boxes = clip_boxes(pred_boxes, im_info.data, 1)
       else:
           # Simply repeat the boxes, once for each class
-          pred_boxes = np.tile(boxes, (1, scores.shape[1]))
+          _ = torch.from_numpy(np.tile(boxes, (1, scores.shape[1])))
+          pred_boxes = _.cuda() if args.cuda > 0 else _
 
       pred_boxes /= data[1][0][2].item()
 
@@ -272,15 +529,21 @@ if __name__ == '__main__':
           im = cv2.imread(imdb.image_path_at(i))
           im2show = np.copy(im)
       for j in xrange(1, imdb.num_classes):
-          inds = torch.nonzero(scores[:,j]>thresh).view(-1)
+          try:
+            inds = torch.nonzero(scores.view(-1,imdb.num_classes)[:,j]>thresh).view(-1)
+          except:
+            pdb.set_trace()
           # if there is det
           if inds.numel() > 0:
-            cls_scores = scores[:,j][inds]
+            try:
+              cls_scores = scores.view(-1,imdb.num_classes)[:,j][inds]
+            except:
+              pdb.set_trace()            
             _, order = torch.sort(cls_scores, 0, True)
             if args.class_agnostic:
-              cls_boxes = pred_boxes[inds, :]
+              cls_boxes = pred_boxes.view(-1,4)[inds, :]
             else:
-              cls_boxes = pred_boxes[inds][:, j * 4:(j + 1) * 4]
+              cls_boxes = pred_boxes.view(-1,4)[inds][:, j * 4:(j + 1) * 4]
             
             cls_dets = torch.cat((cls_boxes, cls_scores.unsqueeze(1)), 1)
             # cls_dets = torch.cat((cls_boxes, cls_scores), 1)
@@ -309,18 +572,25 @@ if __name__ == '__main__':
       sys.stdout.write('im_detect: {:d}/{:d} {:.3f}s {:.3f}s   \r' \
           .format(i + 1, num_images, detect_time, nms_time))
       sys.stdout.flush()
-
+      # all_time.append(detect_time+nms_time)
       if vis:
           cv2.imwrite('result.png', im2show)
           pdb.set_trace()
           #cv2.imshow('test', im2show)
           #cv2.waitKey(0)
-
+      det_all+= detect_time
+      '''
+      if i % 1000 == 1:
+        fps = 1/(det_all/i)
+        print("fps: {}\n".format(fps))
+      '''
+  #import pdb; pdb.set_trace()
   with open(det_file, 'wb') as f:
-      pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
+    pickle.dump(all_boxes, f, pickle.HIGHEST_PROTOCOL)
 
   print('Evaluating detections')
-  imdb.evaluate_detections(all_boxes, output_dir)
+  for thresh in [0.5]:
+    imdb.evaluate_detections(all_boxes, output_dir,thresh)
 
   end = time.time()
   print("test time: %0.4fs" % (end - start))

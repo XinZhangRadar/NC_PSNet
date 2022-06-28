@@ -9,7 +9,7 @@ from model.utils.config import cfg
 from datasets.factory import get_imdb
 import PIL
 import pdb
-
+a = 0
 def prepare_roidb(imdb):
   """Enrich the imdb's roidb by adding some derived quantities that
   are useful for training. This function precomputes the maximum
@@ -24,11 +24,16 @@ def prepare_roidb(imdb):
          for i in range(imdb.num_images)]
          
   for i in range(len(imdb.image_index)):
-    roidb[i]['img_id'] = imdb.image_id_at(i)
-    roidb[i]['image'] = imdb.image_path_at(i)
+    try:
+      roidb[i]['img_id'] = imdb.image_id_at(i)
+      roidb[i]['image'] = imdb.image_path_at(i)
+    except:
+      import pdb; pdb.set_trace()
     if not (imdb.name.startswith('coco')):
-      roidb[i]['width'] = sizes[i][0]
-      roidb[i]['height'] = sizes[i][1]
+      if(i<len(imdb.image_index)):
+      #if(i<len(imdb.image_index)/43):
+        roidb[i]['width'] = sizes[i][0]
+        roidb[i]['height'] = sizes[i][1]
     # need gt_overlaps as a dense array for argmax
     gt_overlaps = roidb[i]['gt_overlaps'].toarray()
     # max overlap with gt over classes (columns)
@@ -40,10 +45,10 @@ def prepare_roidb(imdb):
     # sanity checks
     # max overlap of 0 => class should be zero (background)
     zero_inds = np.where(max_overlaps == 0)[0]
-    assert all(max_classes[zero_inds] == 0)
+    #assert all(max_classes[zero_inds] == 0)
     # max overlap > 0 => class should not be zero (must be a fg class)
     nonzero_inds = np.where(max_overlaps > 0)[0]
-    assert all(max_classes[nonzero_inds] != 0)
+    #assert all(max_classes[nonzero_inds] != 0)
 
 
 def rank_roidb_ratio(roidb):
@@ -53,9 +58,19 @@ def rank_roidb_ratio(roidb):
     
     ratio_list = []
     for i in range(len(roidb)):
-      width = roidb[i]['width']
-      height = roidb[i]['height']
-      ratio = width / float(height)
+      #pdb.set_trace();
+      try:
+        width = roidb[i]['width']
+        height = roidb[i]['height']
+        ratio = width / float(height)
+      except:
+        print(i)
+        pdb.set_trace()
+      #print(width)
+      #print(roidb[i]['image'])
+
+        #import pdb;pdb.set_trace()
+
 
       if ratio > ratio_large:
         roidb[i]['need_crop'] = 1
@@ -77,25 +92,61 @@ def filter_roidb(roidb):
     print('before filtering, there are %d images...' % (len(roidb)))
     i = 0
     while i < len(roidb):
+      #pdb.set_trace()
       if len(roidb[i]['boxes']) == 0:
         del roidb[i]
         i -= 1
+      else:
+        for box in roidb[i]['boxes']:
+          try:
+            if box[3]<=box[1] or box[2]<=box[0] or max(box[1],box[3])> roidb[i]['height'] or  max(box[0],box[2])> roidb[i]['width'] or min(box[1],box[3],box[0],box[2])<0:
+              del roidb[i]
+              i -= 1
+              continue                 
+          except:
+            pdb.set_trace()
+          
+            #print(roidb[i]['image'])
+     
       i += 1
 
     print('after filtering, there are %d images...' % (len(roidb)))
     return roidb
 
+
+def filter_roidb2(roidb):
+    # filter the image without bounding box.
+    print('before filtering, there are %d images...' % (len(roidb)))
+    i = 0
+    while i < len(roidb):
+      #pdb.set_trace()
+      if roidb[i]['zerolabel']:
+        del roidb[i]
+        i -= 1     
+      i += 1
+
+    print('after view filtering, there are %d images...' % (len(roidb)))
+    return roidb
+
+
 def combined_roidb(imdb_names, training=True):
   """
   Combine multiple roidbs
   """
-
+  #pdb.set_trace();
   def get_training_roidb(imdb):
     """Returns a roidb (Region of Interest database) for use in training."""
     if cfg.TRAIN.USE_FLIPPED:
       print('Appending horizontally-flipped training examples...')
       imdb.append_flipped_images()
       print('done')
+
+
+    if cfg.TRAIN.USE_AFFINE:
+      print('Appending affine training examples...')
+      imdb.append_affine_images()
+      print('done')   
+
 
     print('Preparing training data...')
 
@@ -106,6 +157,7 @@ def combined_roidb(imdb_names, training=True):
     return imdb.roidb
   
   def get_roidb(imdb_name):
+    #pdb.set_trace();
     imdb = get_imdb(imdb_name)
     print('Loaded dataset `{:s}` for training'.format(imdb.name))
     imdb.set_proposal_method(cfg.TRAIN.PROPOSAL_METHOD)
@@ -126,7 +178,8 @@ def combined_roidb(imdb_names, training=True):
 
   if training:
     roidb = filter_roidb(roidb)
-
+    #roidb = filter_roidb2(roidb)
+  #pdb.set_trace();
   ratio_list, ratio_index = rank_roidb_ratio(roidb)
 
   return imdb, roidb, ratio_list, ratio_index

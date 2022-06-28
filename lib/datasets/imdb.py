@@ -16,7 +16,8 @@ import numpy as np
 import scipy.sparse
 from model.utils.config import cfg
 import pdb
-
+import cv2 as cv
+from model.utils.skew_image import affine_skew
 ROOT_DIR = osp.join(osp.dirname(__file__), '..', '..')
 
 class imdb(object):
@@ -120,13 +121,58 @@ class imdb(object):
       oldx2 = boxes[:, 2].copy()
       boxes[:, 0] = widths[i] - oldx2 - 1
       boxes[:, 2] = widths[i] - oldx1 - 1
+      for b in range(len(boxes)):
+        if boxes[b][2]< boxes[b][0]:
+          boxes[b][0] = 0
       assert (boxes[:, 2] >= boxes[:, 0]).all()
       entry = {'boxes': boxes,
                'gt_overlaps': self.roidb[i]['gt_overlaps'],
                'gt_classes': self.roidb[i]['gt_classes'],
-               'flipped': True}
+               'flipped': True,'affine': cfg.TRAIN.USE_AFFINE}
       self.roidb.append(entry)
     self._image_index = self._image_index * 2
+
+  def append_affine_images(self):
+    #pdb.set_trace();
+    image_index = [];
+    num_images = self.num_images
+    
+    #widths = self._get_widths()
+    for i in range(num_images):
+      #pdb.set_trace()
+    
+
+      im = cv.imread(self.image_path_at(i));
+      boxes = self.roidb[i]['boxes'].copy();
+      if len(self.roidb[i]['boxes']) != 0:
+        oldx1 = boxes[:, 0].copy()
+        oldx2 = boxes[:, 2].copy()
+        oldy1 = boxes[:, 1].copy()
+        oldy2 = boxes[:, 3].copy()
+      #pdb.set_trace();
+        X = np.vstack((oldx1,oldy1,np.ones((oldx1.shape)),oldx2,oldy2,np.ones(oldx1.shape),oldx1,oldy2,np.ones((oldx1.shape)),oldx2,oldy1,np.ones((oldx1.shape)))) 
+        X_T = X.T
+        XX = X_T.reshape(boxes.shape[0],4,-1);#(num_box,4 orders,(x,y,1))
+
+
+      #X = np.array([[oldx1,oldx2,oldx2,oldx1],[oldy1,oldy2,oldy1,oldy1]]);
+        for t in 2**(0.5*np.arange(1,3)):
+          for phi in np.arange(0, 180, 72.0 / t):
+            img, _,A = affine_skew(t, phi, im);
+          #pdb.set_trace()
+            X_A = np.dot(XX,A.T);#num_boxes*4 ords*2
+            min_matrix = np.min(X_A,1);#num_boxes*2
+            max_matrix = np.max(X_A,1);#num_boxes*2
+            boxes = np.hstack((min_matrix,max_matrix)) #num_boxes*4
+            boxes = boxes.astype(np.int16)
+            entry = {'width':img.shape[1],'height':img.shape[0],'boxes': boxes,'gt_overlaps': self.roidb[i]['gt_overlaps'],'gt_classes': self.roidb[i]['gt_classes'],'affine': True,'t':t,'phi':phi,'flipped': cfg.TRAIN.USE_FLIPPED}
+            self.roidb.append(entry)
+            image_index.append(self._image_index[i]);
+
+    #pdb.set_trace();
+    self._image_index = self._image_index + image_index;
+
+
 
   def evaluate_recall(self, candidate_boxes=None, thresholds=None,
                       area='all', limit=None):
@@ -243,6 +289,7 @@ class imdb(object):
         'gt_classes': np.zeros((num_boxes,), dtype=np.int32),
         'gt_overlaps': overlaps,
         'flipped': False,
+        'afine':False,
         'seg_areas': np.zeros((num_boxes,), dtype=np.float32),
       })
     return roidb

@@ -1,8 +1,8 @@
 from __future__ import print_function
 import os
 import torch
-from torch.utils.ffi import create_extension
-
+#from torch.utils.ffi import create_extension
+from torch.utils.cpp_extension import BuildExtension
 #this_file = os.path.dirname(__file__)
 
 sources = []
@@ -23,7 +23,8 @@ extra_objects = ['src/nms_cuda_kernel.cu.o']
 extra_objects = [os.path.join(this_file, fname) for fname in extra_objects]
 print(extra_objects)
 
-ffi = create_extension(
+#ffi = create_extension(
+ffi = BuildExtension(
     '_ext.nms',
     headers=headers,
     sources=sources,

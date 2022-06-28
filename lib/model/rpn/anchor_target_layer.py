@@ -1,3 +1,7 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+# Author : Liu Yicheng( Modified )
+# Date : 2019/9/14 
 from __future__ import absolute_import
 # --------------------------------------------------------
 # Faster R-CNN
@@ -52,11 +56,13 @@ class _AnchorTargetLayer(nn.Module):
         #   generate 9 anchor boxes centered on cell i
         #   apply predicted bbox deltas at cell i to each of the 9 anchors
         # filter out-of-image anchors
-
+        #pdb.set_trace()
         rpn_cls_score = input[0]
         gt_boxes = input[1]
         im_info = input[2]
         num_boxes = input[3]
+        #pdb.set_trace()
+        #gt_boxes = gt_boxes[:,:,:-1]
 
         # map of shape (..., H, W)
         height, width = rpn_cls_score.size(2), rpn_cls_score.size(3)
@@ -91,19 +97,25 @@ class _AnchorTargetLayer(nn.Module):
         anchors = all_anchors[inds_inside, :]
 
         # label: 1 is positive, 0 is negative, -1 is dont care
-        labels = gt_boxes.new(batch_size, inds_inside.size(0)).fill_(-1)
+        labels = gt_boxes.new(batch_size, inds_inside.size(0)).fill_(-1)  # torch.Size([4, 8843])  
         bbox_inside_weights = gt_boxes.new(batch_size, inds_inside.size(0)).zero_()
         bbox_outside_weights = gt_boxes.new(batch_size, inds_inside.size(0)).zero_()
+        # pdb.set_trace()
 
-        overlaps = bbox_overlaps_batch(anchors, gt_boxes)
-
+        overlaps = bbox_overlaps_batch(anchors, gt_boxes) #torch.Size([4, 8843, 50])
+        #argmax_overlaps:the index of gt that can do self-attention with each anchor
+        # 每个anchor最有可能的类，和iou值
         max_overlaps, argmax_overlaps = torch.max(overlaps, 2)
+        # for views
+        #overlaps_indece = argmax_overlaps
+        # 每一个gt最大的iou
         gt_max_overlaps, _ = torch.max(overlaps, 1)
 
         if not cfg.TRAIN.RPN_CLOBBER_POSITIVES:
             labels[max_overlaps < cfg.TRAIN.RPN_NEGATIVE_OVERLAP] = 0
 
         gt_max_overlaps[gt_max_overlaps==0] = 1e-5
+        #剔除overlaps中的iou小的值 给每一个gtbox一个anchor
         keep = torch.sum(overlaps.eq(gt_max_overlaps.view(batch_size,1,-1).expand_as(overlaps)), 2)
 
         if torch.sum(keep) > 0:
@@ -132,7 +144,7 @@ class _AnchorTargetLayer(nn.Module):
                 disable_inds = fg_inds[rand_num[:fg_inds.size(0)-num_fg]]
                 labels[i][disable_inds] = -1
 
-#           num_bg = cfg.TRAIN.RPN_BATCHSIZE - sum_fg[i]
+        #   num_bg = cfg.TRAIN.RPN_BATCHSIZE - sum_fg[i]
             num_bg = cfg.TRAIN.RPN_BATCHSIZE - torch.sum((labels == 1).int(), 1)[i]
 
             # subsample negative labels if we have too many
@@ -163,6 +175,9 @@ class _AnchorTargetLayer(nn.Module):
         bbox_outside_weights[labels == 1] = positive_weights
         bbox_outside_weights[labels == 0] = negative_weights
 
+        # 
+        #overlaps_indece = _unmap(overlaps_indece, total_anchors, inds_inside, batch_size, fill=0.5)
+
         labels = _unmap(labels, total_anchors, inds_inside, batch_size, fill=-1)
         bbox_targets = _unmap(bbox_targets, total_anchors, inds_inside, batch_size, fill=0)
         bbox_inside_weights = _unmap(bbox_inside_weights, total_anchors, inds_inside, batch_size, fill=0)
@@ -189,6 +204,10 @@ class _AnchorTargetLayer(nn.Module):
         bbox_outside_weights = bbox_outside_weights.contiguous().view(batch_size, height, width, 4*A)\
                             .permute(0,3,1,2).contiguous()
         outputs.append(bbox_outside_weights)
+
+        #overlaps_indece = overlaps_indece.view(batch_size, height, width, A).permute(0,3,1,2).contiguous()
+        #overlaps_indece = overlaps_indece.view(batch_size, 1, A * height, width)
+        #outputs.append(overlaps_indece)
 
         return outputs
 

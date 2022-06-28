@@ -11,17 +11,26 @@ import xml.etree.ElementTree as ET
 import os
 import pickle
 import numpy as np
-
+import pdb
 def parse_rec(filename):
   """ Parse a PASCAL VOC xml file """
-  tree = ET.parse(filename)
   objects = []
+  try:
+    tree = ET.parse(filename)
+  except:
+    return objects
   for obj in tree.findall('object'):
     obj_struct = {}
     obj_struct['name'] = obj.find('name').text
     obj_struct['pose'] = obj.find('pose').text
-    obj_struct['truncated'] = int(obj.find('truncated').text)
-    obj_struct['difficult'] = int(obj.find('difficult').text)
+    try:
+      obj_struct['truncated'] = int(obj.find('truncated').text)
+    except:
+      obj_struct['truncated'] = 0
+    try:
+      obj_struct['difficult'] = int(obj.find('difficult').text)
+    except:
+      obj_struct['difficult'] = 0
     bbox = obj.find('bndbox')
     obj_struct['bbox'] = [int(bbox.find('xmin').text),
                           int(bbox.find('ymin').text),
@@ -39,6 +48,7 @@ def voc_ap(rec, prec, use_07_metric=False):
   VOC 07 11 point method (default:False).
   """
   if use_07_metric:
+    #pdb.set_trace()
     # 11 point metric
     ap = 0.
     for t in np.arange(0., 1.1, 0.1):
@@ -48,6 +58,7 @@ def voc_ap(rec, prec, use_07_metric=False):
         p = np.max(prec[rec >= t])
       ap = ap + p / 11.
   else:
+    #pdb.set_trace()
     # correct AP calculation
     # first append sentinel values at the end
     mrec = np.concatenate(([0.], rec, [1.]))
@@ -71,7 +82,7 @@ def voc_eval(detpath,
              imagesetfile,
              classname,
              cachedir,
-             ovthresh=0.5,
+             ovthresh,
              use_07_metric=False):
   """rec, prec, ap = voc_eval(detpath,
                               annopath,
@@ -105,13 +116,15 @@ def voc_eval(detpath,
   # read list of images
   with open(imagesetfile, 'r') as f:
     lines = f.readlines()
+  # import pdb;pdb.set_trace()
   imagenames = [x.strip() for x in lines]
-
+  #import pdb;pdb.set_trace()
   if not os.path.isfile(cachefile):
     # load annotations
     recs = {}
     for i, imagename in enumerate(imagenames):
       recs[imagename] = parse_rec(annopath.format(imagename))
+
       if i % 100 == 0:
         print('Reading annotation for {:d}/{:d}'.format(
           i + 1, len(imagenames)))
@@ -126,6 +139,8 @@ def voc_eval(detpath,
         recs = pickle.load(f)
       except:
         recs = pickle.load(f, encoding='bytes')
+
+
 
   # extract gt objects for this class
   class_recs = {}
@@ -147,6 +162,7 @@ def voc_eval(detpath,
 
   splitlines = [x.strip().split(' ') for x in lines]
   image_ids = [x[0] for x in splitlines]
+  #pdb.set_trace();
   confidence = np.array([float(x[1]) for x in splitlines])
   BB = np.array([[float(z) for z in x[2:]] for x in splitlines])
 
@@ -199,6 +215,7 @@ def voc_eval(detpath,
         fp[d] = 1.
 
   # compute precision recall
+  #pdb.set_trace()
   fp = np.cumsum(fp)
   tp = np.cumsum(tp)
   rec = tp / float(npos)
@@ -207,4 +224,4 @@ def voc_eval(detpath,
   prec = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
   ap = voc_ap(rec, prec, use_07_metric)
 
-  return rec, prec, ap
+  return rec, prec, ap, fp

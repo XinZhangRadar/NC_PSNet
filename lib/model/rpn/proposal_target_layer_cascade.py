@@ -23,9 +23,10 @@ class _ProposalTargetLayer(nn.Module):
     classification labels and bounding-box regression targets.
     """
 
-    def __init__(self, nclasses):
+    def __init__(self, nclasses, nview):
         super(_ProposalTargetLayer, self).__init__()
         self._num_classes = nclasses
+        self._view_size = nview
         self.BBOX_NORMALIZE_MEANS = torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_MEANS)
         self.BBOX_NORMALIZE_STDS = torch.FloatTensor(cfg.TRAIN.BBOX_NORMALIZE_STDS)
         self.BBOX_INSIDE_WEIGHTS = torch.FloatTensor(cfg.TRAIN.BBOX_INSIDE_WEIGHTS)
@@ -35,25 +36,33 @@ class _ProposalTargetLayer(nn.Module):
         self.BBOX_NORMALIZE_MEANS = self.BBOX_NORMALIZE_MEANS.type_as(gt_boxes)
         self.BBOX_NORMALIZE_STDS = self.BBOX_NORMALIZE_STDS.type_as(gt_boxes)
         self.BBOX_INSIDE_WEIGHTS = self.BBOX_INSIDE_WEIGHTS.type_as(gt_boxes)
+        
+        
 
         gt_boxes_append = gt_boxes.new(gt_boxes.size()).zero_()
         gt_boxes_append[:,:,1:5] = gt_boxes[:,:,:4]
+        
+        #pdb.set_trace()
+        # view_append = view.new(gt_boxes.size(0),gt_boxes.size(1),view.size(2))
+        # for i in range(view_append.size(0)):
+        #     view_append[i] = torch.zeros(gt_boxes.size(1),view.size(2)).cuda().scatter_(1, view_label[i][:].unsqueeze(1).long(), 1)
 
         # Include ground-truth boxes in the set of candidate rois
         all_rois = torch.cat([all_rois, gt_boxes_append], 1)
+        # view = torch.cat([view, view_append], 1)
 
         num_images = 1
         rois_per_image = int(cfg.TRAIN.BATCH_SIZE / num_images)
         fg_rois_per_image = int(np.round(cfg.TRAIN.FG_FRACTION * rois_per_image))
         fg_rois_per_image = 1 if fg_rois_per_image == 0 else fg_rois_per_image
 
-        labels, rois, bbox_targets, bbox_inside_weights = self._sample_rois_pytorch(
+        labels, rois, bbox_targets, bbox_inside_weights,overlaps_indece_batch = self._sample_rois_pytorch(
             all_rois, gt_boxes, fg_rois_per_image,
             rois_per_image, self._num_classes)
 
         bbox_outside_weights = (bbox_inside_weights > 0).float()
 
-        return rois, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights
+        return rois, labels, bbox_targets, bbox_inside_weights, bbox_outside_weights,overlaps_indece_batch
 
     def backward(self, top, propagate_down, bottom):
         """This layer does not propagate gradients."""
@@ -92,7 +101,6 @@ class _ProposalTargetLayer(nn.Module):
 
         return bbox_targets, bbox_inside_weights
 
-
     def _compute_targets_pytorch(self, ex_rois, gt_rois):
         """Compute bounding-box regression targets for an image."""
 
@@ -112,16 +120,23 @@ class _ProposalTargetLayer(nn.Module):
 
         return targets
 
-
     def _sample_rois_pytorch(self, all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
         """Generate a random sample of RoIs comprising foreground and background
         examples.
         """
         # overlaps: (rois x gt_boxes)
+        
 
         overlaps = bbox_overlaps_batch(all_rois, gt_boxes)
+        #pdb.set_trace()
 
         max_overlaps, gt_assignment = torch.max(overlaps, 2)
+        #X = max_overlaps.cpu().numpy();
+        #Y = cls_prob[:,1].cpu().detach().numpy();
+        #plt.scatter(X, Y)
+        #plt.show()
+        
+        overlaps_indece = gt_assignment;
 
         batch_size = overlaps.size(0)
         num_proposal = overlaps.size(1)
@@ -129,12 +144,27 @@ class _ProposalTargetLayer(nn.Module):
 
         offset = torch.arange(0, batch_size)*gt_boxes.size(1)
         offset = offset.view(-1, 1).type_as(gt_assignment) + gt_assignment
+        # import pdb; pdb.set_trace()
+        
+        #labels = gt_boxes[:,:,4].contiguous().view(-1).index((offset.view(-1),)).view(batch_size, -1)
+        #views_gt = gt_views[:,:].contiguous().view(-1).index((offset.view(-1),)).view(batch_size, -1)#view_add
 
-        labels = gt_boxes[:,:,4].contiguous().view(-1).index((offset.view(-1),)).view(batch_size, -1)
+        labels = gt_boxes[:,:,4].contiguous().view(-1)[(offset.view(-1),)].view(batch_size, -1)
+        # import pdb; pdb.set_trace()
+        
+        overlaps_indece_batch = overlaps_indece.new(batch_size, rois_per_image).fill_(100);
         
         labels_batch = labels.new(batch_size, rois_per_image).zero_()
+
+
         rois_batch  = all_rois.new(batch_size, rois_per_image, 5).zero_()
         gt_rois_batch = all_rois.new(batch_size, rois_per_image, 5).zero_()
+        
+        #
+        # view_batch = views.new(batch_size, rois_per_image, self._view_size).zero_()
+        # view_gt = v_label.new(batch_size, rois_per_image, self._view_size).zero_()
+        
+        
         # Guard against the case when an image has fewer than max_fg_rois_per_image
         # foreground RoIs
         for i in range(batch_size):
@@ -191,12 +221,21 @@ class _ProposalTargetLayer(nn.Module):
             # The indices that we're selecting (both fg and bg)
             keep_inds = torch.cat([fg_inds, bg_inds], 0)
 
+            # pdb.set_trace()
             # Select sampled values from various arrays:
             labels_batch[i].copy_(labels[i][keep_inds])
+            overlaps_indece_batch[i].copy_(overlaps_indece[i][keep_inds])
 
             # Clamp labels for the background RoIs to 0
             if fg_rois_per_this_image < rois_per_image:
                 labels_batch[i][fg_rois_per_this_image:] = 0
+                #overlaps_indece_batch[i][fg_rois_per_this_image:] = 0.5
+            
+            
+            # view_batch[i] = views[i][keep_inds]
+            # view_gt[i] = v_label[i][keep_inds]
+
+
 
             rois_batch[i] = all_rois[i][keep_inds]
             rois_batch[i,:,0] = i
@@ -208,5 +247,8 @@ class _ProposalTargetLayer(nn.Module):
 
         bbox_targets, bbox_inside_weights = \
                 self._get_bbox_regression_labels_pytorch(bbox_target_data, labels_batch, num_classes)
+        #pdb.set_trace()
 
-        return labels_batch, rois_batch, bbox_targets, bbox_inside_weights
+
+        # return labels_batch, rois_batch, bbox_targets, bbox_inside_weights,overlaps_indece_batch, view_batch,views_gt_batch
+        return labels_batch, rois_batch, bbox_targets, bbox_inside_weights,overlaps_indece_batch

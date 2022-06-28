@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import math
 import torchvision.models as models
-from model.faster_rcnn.faster_rcnn import _fasterRCNN
+from model.faster_rcnn.faster_rcnn_fc import _fasterRCNN
 import pdb
 
 class vgg16(_fasterRCNN):
@@ -29,6 +29,7 @@ class vgg16(_fasterRCNN):
     vgg = models.vgg16()
     if self.pretrained:
         print("Loading pretrained weights from %s" %(self.model_path))
+        #pdb.set_trace()
         state_dict = torch.load(self.model_path)
         vgg.load_state_dict({k:v for k,v in state_dict.items() if k in vgg.state_dict()})
 

@@ -66,8 +66,8 @@ __C.TRAIN.SCALES = (600,)
 __C.TRAIN.MAX_SIZE = 1000
 
 # Trim size for input images to create minibatch
-__C.TRAIN.TRIM_HEIGHT = 600
-__C.TRAIN.TRIM_WIDTH = 600
+__C.TRAIN.TRIM_HEIGHT = 300
+__C.TRAIN.TRIM_WIDTH = 300
 
 # Images to use per minibatch
 __C.TRAIN.IMS_PER_BATCH = 1
@@ -87,8 +87,8 @@ __C.TRAIN.BG_THRESH_HI = 0.5
 __C.TRAIN.BG_THRESH_LO = 0.1
 
 # Use horizontally-flipped images during training?
-__C.TRAIN.USE_FLIPPED = True
-
+__C.TRAIN.USE_FLIPPED = False
+__C.TRAIN.USE_AFFINE = False
 # Train bounding-box regressors
 __C.TRAIN.BBOX_REG = True
 
@@ -172,8 +172,8 @@ __C.TEST.MAX_SIZE = 1000
 
 # Overlap threshold used for non-maximum suppression (suppress boxes with
 # IoU >= this threshold)
+# __C.TEST.NMS = 0.3
 __C.TEST.NMS = 0.3
-
 # Experimental: treat the (K+1) units in the cls_score layer as linear
 # predictors (trained, eg, with one-vs-rest SVMs).
 __C.TEST.SVM = False
@@ -289,8 +289,8 @@ __C.POOLING_SIZE = 7
 __C.MAX_NUM_GT_BOXES = 20
 
 # Anchor scales for RPN
-__C.ANCHOR_SCALES = [8,16,32]
-
+#__C.ANCHOR_SCALES = [8,24,16,32]
+__C.ANCHOR_SCALES = [8, 16, 32]#[8,32,256,512]
 # Anchor ratios for RPN
 __C.ANCHOR_RATIOS = [0.5,1,2]
 

@@ -1,7 +1,7 @@
 from __future__ import print_function
 from __future__ import absolute_import
 __author__ = 'tsungyi'
-
+import pdb
 import numpy as np
 import datetime
 import time
@@ -139,6 +139,7 @@ class COCOeval:
         Run per image evaluation on given images and store results (a list of dict) in self.evalImgs
         :return: None
         '''
+        #pdb.set_trace()
         tic = time.time()
         print('Running per image evaluation...      ')
         p = self.params
@@ -324,6 +325,7 @@ class COCOeval:
                 for m, maxDet in enumerate(m_list):
                     E = [self.evalImgs[Nk+Na+i] for i in i_list]
                     E = filter(None, E)
+                    pdb.set_trace()
                     if len(E) == 0:
                         continue
                     dtScores = np.concatenate([e['dtScores'][0:maxDet] for e in E])

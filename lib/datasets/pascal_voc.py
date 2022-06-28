@@ -5,6 +5,7 @@ from __future__ import absolute_import
 # Copyright (c) 2015 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 # Written by Ross Girshick
+# modified by Yicheng Liu
 # --------------------------------------------------------
 
 import xml.dom.minidom as minidom
@@ -24,7 +25,7 @@ from .imdb import imdb
 from .imdb import ROOT_DIR
 from . import ds_utils
 from .voc_eval import voc_eval
-
+import pdb;
 # TODO: make fast_rcnn irrelevant
 # >>>> obsolete, because it depends on sth outside of this project
 from model.utils.config import cfg
@@ -34,6 +35,7 @@ try:
 except NameError:
     xrange = range  # Python 3
 
+from geo_distance import *
 # <<<< obsolete
 
 
@@ -44,13 +46,24 @@ class pascal_voc(imdb):
         self._image_set = image_set
         self._devkit_path = self._get_default_path() if devkit_path is None \
             else devkit_path
+        #self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)
         self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)
+        '''
         self._classes = ('__background__',  # always index 0
                          'aeroplane', 'bicycle', 'bird', 'boat',
                          'bottle', 'bus', 'car', 'cat', 'chair',
                          'cow', 'diningtable', 'dog', 'horse',
                          'motorbike', 'person', 'pottedplant',
-                         'sheep', 'sofa', 'train', 'tvmonitor')
+                         'sheep', 'sofa', 'train', 'tvmonitor','plane')
+         ''' 
+        self._classes = ('__background__', 'building')      
+        #self._classes = ('__background__', 'plane')
+        # self._classes = ('__background__', 'f-16','j-10','su-33ub','yf-22','e-2c','f-14','j-5','fa-18e')
+        #self._classes = ('__background__','car','train','tvmonitor','diningtable','boat','aeroplane','bus','bicycle','chair','bottle','sofa','motorbike')
+        #self._classes = ('__background__','aeroplane','ashtray','backpack','basket','bed','bench','bicycle','blackboard','boat','bookshelf','bottle','bucket','bus','cabinet','calculator','camera','can','cap','car','cellphone','chair','clock','coffee_maker','comb','computer','cup','desk_lamp','diningtable','dishwasher','door','eraser','eyeglasses','fan','faucet','filing_cabinet','fire_extinguisher','fish_tank','flashlight','fork','guitar','hair_dryer','hammer','headphone','helmet','iron','jar','kettle','key','keyboard','knife','laptop','lighter','mailbox','microphone','microwave','motorbike','mouse','paintbrush','pan','pen','pencil','piano','pillow','plate','pot','printer','racket','refrigerator','remote_control','rifle','road_pole','satellite_dish','scissors','screwdriver','shoe','shovel','sign','skate','skateboard','slipper','sofa','speaker','spoon','stapler','stove','suitcase','teapot','telephone','toaster','toilet','toothbrush','train','trash_bin','trophy','tub','tvmonitor','vending_machine','washing_machine','watch','wheelchair')
+        
+        #self._classes =('__background__','desk_lamp','bicycle','helmet','aeroplane','car','faucet','boat','motorbike','bench','diningtable')
+
         self._class_to_ind = dict(zip(self.classes, xrange(self.num_classes)))
         self._image_ext = '.jpg'
         self._image_index = self._load_image_set_index()
@@ -113,8 +126,8 @@ class pascal_voc(imdb):
         """
         Return the default path where PASCAL VOC is expected to be installed.
         """
-        return os.path.join(cfg.DATA_DIR, 'VOCdevkit' + self._year)
-
+        #return os.path.join(cfg.DATA_DIR, 'VOCdevkit' + self._year)
+        return os.path.join(cfg.DATA_DIR, 'VOCdevkit')
     def gt_roidb(self):
         """
         Return the database of ground-truth regions of interest.
@@ -127,6 +140,7 @@ class pascal_voc(imdb):
                 roidb = pickle.load(fid)
             print('{} gt roidb loaded from {}'.format(self.name, cache_file))
             return roidb
+        #pdb.set_trace()
 
         gt_roidb = [self._load_pascal_annotation(index)
                     for index in self.image_index]
@@ -219,8 +233,13 @@ class pascal_voc(imdb):
         #     #         len(objs) - len(non_diff_objs))
         #     objs = non_diff_objs
         num_objs = len(objs)
-
+        
         boxes = np.zeros((num_objs, 4), dtype=np.uint16)
+        poses = np.zeros((num_objs, 3), dtype=np.int32)
+        views = np.zeros((num_objs),dtype=np.int32)
+        num_view = 33
+        distance_t = np.zeros((num_objs,num_view),dtype=np.float32)
+
         gt_classes = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
         # "Seg" area for pascal is just the box area
@@ -231,29 +250,226 @@ class pascal_voc(imdb):
         for ix, obj in enumerate(objs):
             bbox = obj.find('bndbox')
             # Make pixel indexes 0-based
+            '''
             x1 = float(bbox.find('xmin').text) - 1
             y1 = float(bbox.find('ymin').text) - 1
             x2 = float(bbox.find('xmax').text) - 1
             y2 = float(bbox.find('ymax').text) - 1
+            '''
+            x1 = float(bbox.find('xmin').text)
+            y1 = float(bbox.find('ymin').text)
+            x2 = float(bbox.find('xmax').text)
+            y2 = float(bbox.find('ymax').text) 
+
+            pose      = obj.find('pose')
+
+            try:
+                distance   = float(pose.find('distance').text)
+                azimuth   = float(pose.find('azimuth').text)
+                elevation = float(pose.find('elevation').text)
+            except:
+                #import pdb; pdb.set_trace()
+                distance   = 0
+                azimuth   = 0
+                elevation = 0
 
             diffc = obj.find('difficult')
             difficult = 0 if diffc == None else int(diffc.text)
             ishards[ix] = difficult
 
             cls = self._class_to_ind[obj.find('name').text.lower().strip()]
+            poses[ix, :] = [distance,azimuth,elevation]
             boxes[ix, :] = [x1, y1, x2, y2]
             gt_classes[ix] = cls
             overlaps[ix, cls] = 1.0
             seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
-
+        #import pdb; pdb.set_trace()
         overlaps = scipy.sparse.csr_matrix(overlaps)
-
+        views, distance_t = self.view_fliter(poses,views,distance_t)
+        assert views.shape[0] == distance_t.shape[0]
         return {'boxes': boxes,
                 'gt_classes': gt_classes,
                 'gt_ishard': ishards,
                 'gt_overlaps': overlaps,
                 'flipped': False,
-                'seg_areas': seg_areas}
+                'affine':False,
+                'seg_areas': seg_areas,
+                'views':views,
+                'distance':distance_t
+                }
+    def view_fliter(self, poses, views, distance):
+        '''
+            input: poses[ix,:]  = [distance,azimuth,elevation]
+            return view[ix] = view ->[1,32]
+        '''
+        
+        for ix in range(len(poses)):
+
+            _, azimuth,elevation = poses[ix,:] 
+
+            views[ix], distance[ix] = self.view_label(azimuth,elevation)
+
+        return views, distance
+
+    def view_label(self, azimuth,elevation):
+        '''
+        input: azimuth
+               elevation
+        out  : view label
+        注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+        ''' 
+        a_intervals = list(([0,15],[15,75],[75,105],[105,165],[165,195],[195,255],[255,285],[285,345],[345,360]))# pascal
+        #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+        e_intervals = list(([-90,-15],[-15,15],[15,60],[60,90]))
+        num_view = 32
+        max_alab = 8
+        distance = np.zeros((num_view+1))
+        e_label = 0
+        a_label = 0
+        for ix in range(len(e_intervals)) :
+            max_i = max(e_intervals[ix][0],e_intervals[ix][1])
+            min_i = min(e_intervals[ix][0],e_intervals[ix][1])
+            if min_i <= elevation and elevation <= max_i:
+                e_label = ix
+        
+        for ix in range(len(a_intervals)) :
+            max_i = max(a_intervals[ix][0],a_intervals[ix][1])
+            min_i = min(a_intervals[ix][0],a_intervals[ix][1])
+            if min_i <= azimuth and azimuth <= max_i:
+                a_label = ix%8
+
+        for jx in range(len(e_intervals)) :
+            
+            mid_e = (e_intervals[jx][0]+e_intervals[jx][1])/2
+            
+            for ix in range(len(a_intervals)) :
+                mid_a = (a_intervals[ix][0]+a_intervals[ix][1])/2
+                
+                if ix % max_alab != 0 or ix==0:	
+
+                    distance[jx*8 + ix] = getDistance(mid_e,mid_a,elevation,azimuth)
+                else:
+                    temp = getDistance(mid_e,mid_a,elevation,azimuth)
+                    distance[jx*8 + ix%8] = (temp+distance[jx*8 + ix%8])/2
+        #pdb.set_trace()
+        # label calculate function
+
+        try:
+            view_label = e_label*(8) + a_label+1
+            if view_label > 33 :
+                pdb.set_trace()
+        except:
+            pdb.set_trace()
+        
+        distance[-1]=view_label
+        return view_label, distance
+
+    def view_label24(self, azimuth,elevation):
+        '''
+        input: azimuth
+               elevation
+        out  : view label
+        注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+        ''' 
+        a_intervals = list(([0,15],[15,75],[75,105],[105,165],[165,195],[195,255],[255,285],[285,345],[345,360]))# pascal
+        #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+        e_intervals = list(([-90,-45],[-45,45],[45,90]))
+        num_view = 24
+        max_alab = 8
+        distance = np.zeros((num_view+1))
+        e_label = 0
+        a_label = 0
+        for ix in range(len(e_intervals)) :
+            max_i = max(e_intervals[ix][0],e_intervals[ix][1])
+            min_i = min(e_intervals[ix][0],e_intervals[ix][1])
+            if min_i <= elevation and elevation <= max_i:
+                e_label = ix
+        
+        for ix in range(len(a_intervals)) :
+            max_i = max(a_intervals[ix][0],a_intervals[ix][1])
+            min_i = min(a_intervals[ix][0],a_intervals[ix][1])
+            if min_i <= azimuth and azimuth <= max_i:
+                a_label = ix%8
+
+        for jx in range(len(e_intervals)) :
+            
+            mid_e = (e_intervals[jx][0]+e_intervals[jx][1])/2
+            
+            for ix in range(len(a_intervals)) :
+                mid_a = (a_intervals[ix][0]+a_intervals[ix][1])/2
+                
+                if ix % max_alab != 0 or ix==0: 
+
+                    distance[jx*8 + ix] = getDistance(mid_e,mid_a,elevation,azimuth)
+                else:
+                    temp = getDistance(mid_e,mid_a,elevation,azimuth)
+                    distance[jx*8 + ix%8] = (temp+distance[jx*8 + ix%8])/2
+        #pdb.set_trace()
+        # label calculate function
+
+        try:
+            view_label = e_label*(8) + a_label+1
+            if view_label > 25 :
+                pdb.set_trace()
+        except:
+            pdb.set_trace()
+        
+        distance[-1]=view_label
+        return view_label, distance
+
+
+    def view_label12(self, azimuth,elevation):
+        '''
+        input: azimuth
+               elevation
+        out  : view label
+        注意分类这里第一项要小于第二项而且第二项不能超过360 注意是个圆
+        ''' 
+        a_intervals = list(([0,45],[45,135],[135,225],[225,315],[315,360]))# pascal
+        #a_intervals = list(([-180,-165],[-165,-105],[-105,-75],[-75,-15],[-15,15],[15,75],[75,105],[105,165],[165,180])) # object
+        e_intervals = list(([-90,-45],[-45,45],[45,90]))
+        num_view = 24
+        max_alab = 8
+        distance = np.zeros((num_view+1))
+        e_label = 0
+        a_label = 0
+        for ix in range(len(e_intervals)) :
+            max_i = max(e_intervals[ix][0],e_intervals[ix][1])
+            min_i = min(e_intervals[ix][0],e_intervals[ix][1])
+            if min_i <= elevation and elevation <= max_i:
+                e_label = ix
+        
+        for ix in range(len(a_intervals)) :
+            max_i = max(a_intervals[ix][0],a_intervals[ix][1])
+            min_i = min(a_intervals[ix][0],a_intervals[ix][1])
+            if min_i <= azimuth and azimuth <= max_i:
+                a_label = ix%8
+
+        for jx in range(len(e_intervals)) :
+            
+            mid_e = (e_intervals[jx][0]+e_intervals[jx][1])/2
+            
+            for ix in range(len(a_intervals)) :
+                mid_a = (a_intervals[ix][0]+a_intervals[ix][1])/2
+                
+                if ix % max_alab != 0 or ix==0: 
+
+                    distance[jx*8 + ix] = getDistance(mid_e,mid_a,elevation,azimuth)
+                else:
+                    temp = getDistance(mid_e,mid_a,elevation,azimuth)
+                    distance[jx*8 + ix%8] = (temp+distance[jx*8 + ix%8])/2
+        #pdb.set_trace()
+        # label calculate function
+
+        try:
+            view_label = e_label*(8) + a_label+1
+            if view_label > 25 :
+                pdb.set_trace()
+        except:
+            pdb.set_trace()
+        
+        distance[-1]=view_label
+        return view_label, distance
 
     def _get_comp_id(self):
         comp_id = (self._comp_id + '_' + self._salt if self.config['use_salt']
@@ -264,6 +480,8 @@ class pascal_voc(imdb):
         # VOCdevkit/results/VOC2007/Main/<comp_id>_det_test_aeroplane.txt
         filename = self._get_comp_id() + '_det_' + self._image_set + '_{:s}.txt'
         filedir = os.path.join(self._devkit_path, 'results', 'VOC' + self._year, 'Main')
+        #pdb.set_trace();
+        filedir = "/home/zhangxin/faster-rcnn.pytorch/VGG_evaluate/"
         if not os.path.exists(filedir):
             os.makedirs(filedir)
         path = os.path.join(filedir, filename)
@@ -277,6 +495,7 @@ class pascal_voc(imdb):
             filename = self._get_voc_results_file_template().format(cls)
             with open(filename, 'wt') as f:
                 for im_ind, index in enumerate(self.image_index):
+                    #pdb.set_trace()
                     dets = all_boxes[cls_ind][im_ind]
                     if dets == []:
                         continue
@@ -287,7 +506,8 @@ class pascal_voc(imdb):
                                        dets[k, 0] + 1, dets[k, 1] + 1,
                                        dets[k, 2] + 1, dets[k, 3] + 1))
 
-    def _do_python_eval(self, output_dir='output'):
+    def _do_python_eval(self, output_dir,thresh):
+        ovthresh = thresh
         annopath = os.path.join(
             self._devkit_path,
             'VOC' + self._year,
@@ -300,9 +520,14 @@ class pascal_voc(imdb):
             'Main',
             self._image_set + '.txt')
         cachedir = os.path.join(self._devkit_path, 'annotations_cache')
+        # pdb.set_trace()
+        #cachedir = "/home/zhangxin/faster-rcnn.pytorch/VGG_evaluate/annotations_cache"
         aps = []
         # The PASCAL VOC metric changed in 2010
-        use_07_metric = True if int(self._year) < 2010 else False
+
+        use_07_metric = False
+
+        #use_07_metric = True if int(self._year) < 2010 else False
         print('VOC07 metric? ' + ('Yes' if use_07_metric else 'No'))
         if not os.path.isdir(output_dir):
             os.mkdir(output_dir)
@@ -310,19 +535,19 @@ class pascal_voc(imdb):
             if cls == '__background__':
                 continue
             filename = self._get_voc_results_file_template().format(cls)
-            rec, prec, ap = voc_eval(
-                filename, annopath, imagesetfile, cls, cachedir, ovthresh=0.5,
+            rec, prec, ap, fp = voc_eval(
+                filename, annopath, imagesetfile, cls, cachedir, ovthresh,
                 use_07_metric=use_07_metric)
             aps += [ap]
-            print('AP for {} = {:.4f}'.format(cls, ap))
+            print('AP for {} = {:.9f}'.format(cls, ap))
             with open(os.path.join(output_dir, cls + '_pr.pkl'), 'wb') as f:
-                pickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
-        print('Mean AP = {:.4f}'.format(np.mean(aps)))
+                pickle.dump({'rec': rec, 'prec': prec, 'ap': ap, 'fp':fp}, f)
+        print('Mean AP = {:.9f}'.format(np.mean(aps)))
         print('~~~~~~~~')
         print('Results:')
         for ap in aps:
-            print('{:.3f}'.format(ap))
-        print('{:.3f}'.format(np.mean(aps)))
+            print('{:.9f}'.format(ap))
+        print('{:.9f}'.format(np.mean(aps)))
         print('~~~~~~~~')
         print('')
         print('--------------------------------------------------------------')
@@ -347,9 +572,11 @@ class pascal_voc(imdb):
         print('Running:\n{}'.format(cmd))
         status = subprocess.call(cmd, shell=True)
 
-    def evaluate_detections(self, all_boxes, output_dir):
+    def evaluate_detections(self, all_boxes, output_dir,thresh):
+
         self._write_voc_results_file(all_boxes)
-        self._do_python_eval(output_dir)
+        # pdb.set_trace()
+        self._do_python_eval(output_dir,thresh)
         if self.config['matlab_eval']:
             self._do_matlab_eval(output_dir)
         if self.config['cleanup']:

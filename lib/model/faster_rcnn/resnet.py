@@ -3,7 +3,18 @@ from __future__ import division
 from __future__ import print_function
 
 from model.utils.config import cfg
-from model.faster_rcnn.faster_rcnn import _fasterRCNN
+#from model.faster_rcnn.faster_rcnn_ps_concat import _fasterRCNN
+#from model.faster_rcnn.faster_rcnn_fc_xiao import _fasterRCNN
+#from model.faster_rcnn.faster_rcnn_fc_split_view import _fasterRCNN
+
+#from model.faster_rcnn.faster_rcnn_fc_eccv_221 import _fasterRCNN
+#from model.faster_rcnn.faster_rcnn_fc_eccv_select_view import _fasterRCNN
+#from model.faster_rcnn.faster_rcnn_fc_eccv_MultiFeatEx import _fasterRCNN
+
+from model.faster_rcnn.psnet import _fasterRCNN
+#from model.faster_rcnn.faster_rcnn_fc_eccv_vote import _fasterRCNN
+# from model.faster_rcnn.faster_rcnn_visualization import _fasterRCNN
+# from model.faster_rcnn.faster_rcnn_vote import _fasterRCNN
 
 import torch
 import torch.nn as nn
@@ -66,12 +77,12 @@ class BasicBlock(nn.Module):
 class Bottleneck(nn.Module):
   expansion = 4
 
-  def __init__(self, inplanes, planes, stride=1, downsample=None):
+  def __init__(self, inplanes, planes, stride=1, downsample=None,dilate=1):
     super(Bottleneck, self).__init__()
     self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False) # change
     self.bn1 = nn.BatchNorm2d(planes)
     self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, # change
-                 padding=1, bias=False)
+                 padding=dilate, bias=False,  dilation=dilate)
     self.bn2 = nn.BatchNorm2d(planes)
     self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
     self.bn3 = nn.BatchNorm2d(planes * 4)
@@ -114,9 +125,10 @@ class ResNet(nn.Module):
     self.layer1 = self._make_layer(block, 64, layers[0])
     self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
     self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-    self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+    #self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilate=[2, 2, 2])
     # it is slightly better whereas slower to set stride = 1
-    # self.layer4 = self._make_layer(block, 512, layers[3], stride=1)
+    self.layer4 = self._make_layer(block, 512, layers[3], stride=1)
+    #pdb.set_trace()
     self.avgpool = nn.AvgPool2d(7)
     self.fc = nn.Linear(512 * block.expansion, num_classes)
 
@@ -128,7 +140,7 @@ class ResNet(nn.Module):
         m.weight.data.fill_(1)
         m.bias.data.zero_()
 
-  def _make_layer(self, block, planes, blocks, stride=1):
+  def _make_layer(self, block, planes, blocks, stride=1, dilate=None):
     downsample = None
     if stride != 1 or self.inplanes != planes * block.expansion:
       downsample = nn.Sequential(
@@ -141,7 +153,12 @@ class ResNet(nn.Module):
     layers.append(block(self.inplanes, planes, stride, downsample))
     self.inplanes = planes * block.expansion
     for i in range(1, blocks):
-      layers.append(block(self.inplanes, planes))
+        if dilate:
+            l = math.ceil(blocks / len(dilate))
+            r = dilate[i // l]
+            layers.append(block(self.inplanes, planes, dilate=r))
+        else:
+            layers.append(block(self.inplanes, planes))
 
     return nn.Sequential(*layers)
 
@@ -218,17 +235,31 @@ def resnet152(pretrained=False):
   return model
 
 class resnet(_fasterRCNN):
-  def __init__(self, classes, num_layers=101, pretrained=False, class_agnostic=False):
-    self.model_path = 'data/pretrained_model/resnet101_caffe.pth'
-    self.dout_base_model = 1024
+  def __init__(self, classes, num_layers=101, pretrained=False, class_agnostic=False,k=30):
+    self.model_path = 'data/pretrained_model/resnet' +str(num_layers) + '_caffe.pth'
+    self.num_layers = num_layers
+    
+    if self.num_layers == 18 or self.num_layers == 34  :
+      self.dout_base_model = 256 
+    else:
+      self.dout_base_model = 1024
     self.pretrained = pretrained
     self.class_agnostic = class_agnostic
+    self.k = k
+    self.num_layers = num_layers
 
     _fasterRCNN.__init__(self, classes, class_agnostic)
 
   def _init_modules(self):
     resnet = resnet101()
-
+    if self.num_layers == 18:
+        resnet = resnet18()
+    if self.num_layers == 34:
+        resnet = resnet34()     
+    if self.num_layers == 50:
+        resnet = resnet50()
+    if self.num_layers == 152:
+        resnet = resnet152()
     if self.pretrained == True:
       print("Loading pretrained weights from %s" %(self.model_path))
       state_dict = torch.load(self.model_path)
@@ -238,18 +269,47 @@ class resnet(_fasterRCNN):
     self.RCNN_base = nn.Sequential(resnet.conv1, resnet.bn1,resnet.relu,
       resnet.maxpool,resnet.layer1,resnet.layer2,resnet.layer3)
 
-    self.RCNN_top = nn.Sequential(resnet.layer4)
 
-    self.RCNN_cls_score = nn.Linear(2048, self.n_classes)
-    if self.class_agnostic:
-      self.RCNN_bbox_pred = nn.Linear(2048, 4)
+
+    if self.num_layers == 18 or self.num_layers == 34:
+        self.RCNN_conv_1x1 = nn.Conv2d(in_channels=512, out_channels=1024,
+                  kernel_size=1, stride=1, padding=0, bias=False)       
     else:
-      self.RCNN_bbox_pred = nn.Linear(2048, 4 * self.n_classes)
+        self.RCNN_conv_1x1 = nn.Conv2d(in_channels=2048, out_channels=1024,
+                  kernel_size=1, stride=1, padding=0, bias=False)
+
+    self.RCNN_conv_new = nn.Sequential(
+        resnet.layer4,
+        self.RCNN_conv_1x1,
+        nn.ReLU()
+    )
+
+    
+    '''
+    self.RCNN_top = nn.Sequential(resnet.layer4)
+    
+
+    self.RCNN_cls_base = nn.Conv2d(in_channels=1024, out_channels=self.view_size_fg*self.k,
+                                   kernel_size=1, stride=1, padding=0, bias=False)
+    '''
+    # multi-stage training:
+    # 1 stage : rpn 
+    # 2 stage : vs conv-PS_Net
+    # 3 stage : rcnn-RCNN_Net
+    # 4 stage : cotraining
+
 
     # Fix blocks
     for p in self.RCNN_base[0].parameters(): p.requires_grad=False
     for p in self.RCNN_base[1].parameters(): p.requires_grad=False
+    '''
+    for p in self.RCNN_base[4].parameters(): p.requires_grad=False  
+    for p in self.RCNN_base[5].parameters(): p.requires_grad=False  
+    for p in self.RCNN_base[6].parameters(): p.requires_grad=False  
 
+    for p in self.RCNN_conv_new[0].parameters(): p.requires_grad=False  
+    for p in self.RCNN_conv_new[1].parameters(): p.requires_grad=False  
+    '''
     assert (0 <= cfg.RESNET.FIXED_BLOCKS < 4)
     if cfg.RESNET.FIXED_BLOCKS >= 3:
       for p in self.RCNN_base[6].parameters(): p.requires_grad=False
@@ -258,14 +318,18 @@ class resnet(_fasterRCNN):
     if cfg.RESNET.FIXED_BLOCKS >= 1:
       for p in self.RCNN_base[4].parameters(): p.requires_grad=False
 
+    # Fix ps conv & cls & regression
+
+
+
     def set_bn_fix(m):
       classname = m.__class__.__name__
       if classname.find('BatchNorm') != -1:
         for p in m.parameters(): p.requires_grad=False
 
+    #self.RCNN_top.apply(set_bn_fix)
     self.RCNN_base.apply(set_bn_fix)
-    self.RCNN_top.apply(set_bn_fix)
-
+    self.RCNN_conv_new.apply(set_bn_fix)
   def train(self, mode=True):
     # Override train so that the training mode is set as we want
     nn.Module.train(self, mode)
@@ -279,9 +343,9 @@ class resnet(_fasterRCNN):
         classname = m.__class__.__name__
         if classname.find('BatchNorm') != -1:
           m.eval()
-
       self.RCNN_base.apply(set_bn_eval)
-      self.RCNN_top.apply(set_bn_eval)
+      self.RCNN_conv_new.apply(set_bn_eval)
+      #self.RCNN_top.apply(set_bn_eval)
 
   def _head_to_tail(self, pool5):
     fc7 = self.RCNN_top(pool5).mean(3).mean(2)

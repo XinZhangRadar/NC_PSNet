@@ -17,5 +17,6 @@ def nms(dets, thresh, force_cpu=False):
     # ---numpy version---
     # original: return gpu_nms(dets, thresh, device_id=cfg.GPU_ID)
     # ---pytorch version---
+    force_cpu = False
 
     return nms_gpu(dets, thresh) if force_cpu == False else nms_cpu(dets, thresh)

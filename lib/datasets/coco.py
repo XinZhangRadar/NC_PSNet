@@ -1,3 +1,7 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+# Author : Liu Yicheng( Modified )
+# Date : 2019/8/18 
 # --------------------------------------------------------
 # Fast/er R-CNN
 # Licensed under The MIT License [see LICENSE for details]
@@ -19,10 +23,15 @@ import scipy.io as sio
 import pickle
 import json
 import uuid
+import pdb
 # COCO API
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as COCOmask
+
+from datasets.NCC import *
+import cv2
+import matplotlib.image 
 
 class coco(imdb):
   def __init__(self, image_set, year):
@@ -64,6 +73,8 @@ class coco(imdb):
     # Dataset splits that have ground-truth annotations (test splits
     # do not have gt annotations)
     self._gt_splits = ('train', 'val', 'minival')
+    
+    self.NCC = NCCloss()
 
   def _get_ann_file(self):
     prefix = 'instances' if self._image_set.find('test') == -1 \
@@ -101,10 +112,14 @@ class coco(imdb):
     """
     # Example image path for index=119993:
     #   images/train2014/COCO_train2014_000000119993.jpg
+    '''
     file_name = ('COCO_' + self._data_name + '_' +
                  str(index).zfill(12) + '.jpg')
     image_path = osp.join(self._data_path, 'images',
                           self._data_name, file_name)
+    '''
+    file_name = (str(index)+ '.jpg')
+    image_path = osp.join(self._data_path, 'images',file_name)
     assert osp.exists(image_path), \
       'Path does not exist: {}'.format(image_path)
     return image_path
@@ -130,10 +145,20 @@ class coco(imdb):
     return gt_roidb
 
   def _load_coco_annotation(self, index):
-    """
+    r"""
     Loads COCO bounding-box instance annotations. Crowd instances are
     handled by marking their overlaps (with all categories) to -1. This
     overlap value means that crowd "instances" are excluded from training.
+
+    加载出每一张ground truth 图片的视角信息，通过读取文件图片可以知道大致的危机纬度信息
+    例如：
+      101121.jpg      
+      第1位:大场景ID
+      第2、3位：小场景ID
+      第4位：经度ID
+      第5位：纬度ID
+      第6位：尺度ID
+    所以目前我们使用第五位（分别是1，2，3，4）但是2，3相差不大所以归为一类
     """
     im_ann = self._COCO.loadImgs(index)[0]
     width = im_ann['width']
@@ -141,8 +166,19 @@ class coco(imdb):
 
     annIds = self._COCO.getAnnIds(imgIds=index, iscrowd=None)
     objs = self._COCO.loadAnns(annIds)
+    ###################################################
+    im_file = self.image_path_from_index(index)
+    # image = cv2.imread(im_file)
+    # pdb.set_trace()
+    im_name = im_file.split('/')[-1].split('.')[0]
+    #105131  .jpg
+    latitude = int(im_name[4])
+    latitude = latitude if latitude < 3 else latitude-1    
+    
+    ###################################################
     # Sanitize bboxes -- some are invalid
     valid_objs = []
+    
     for obj in objs:
       x1 = np.max((0, obj['bbox'][0]))
       y1 = np.max((0, obj['bbox'][1]))
@@ -151,11 +187,17 @@ class coco(imdb):
       if obj['area'] > 0 and x2 >= x1 and y2 >= y1:
         obj['clean_bbox'] = [x1, y1, x2, y2]
         valid_objs.append(obj)
+        # cropim = image[y1:y2,x1:x2]
+        # cls_id = obj['category_id']
+        # angle =  self.NCC.loss(cropim,cls_id)
+       
+      
     objs = valid_objs
     num_objs = len(objs)
-
+    
     boxes = np.zeros((num_objs, 4), dtype=np.uint16)
     gt_classes = np.zeros((num_objs), dtype=np.int32)
+    views = np.zeros((num_objs), dtype=np.int32)
     overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
     seg_areas = np.zeros((num_objs), dtype=np.float32)
 
@@ -169,6 +211,7 @@ class coco(imdb):
       cls = coco_cat_id_to_class_ind[obj['category_id']]
       boxes[ix, :] = obj['clean_bbox']
       gt_classes[ix] = cls
+      views[ix] = latitude
       seg_areas[ix] = obj['area']
       if obj['iscrowd']:
         # Set overlap to -1 for all classes for crowd objects
@@ -185,7 +228,9 @@ class coco(imdb):
             'gt_classes': gt_classes,
             'gt_overlaps': overlaps,
             'flipped': False,
-            'seg_areas': seg_areas}
+            'seg_areas': seg_areas,
+            'views': views,
+            }
 
   def _get_widths(self):
     return [r['width'] for r in self.roidb]

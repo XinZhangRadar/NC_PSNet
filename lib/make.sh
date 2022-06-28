@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 
 # CUDA_PATH=/usr/local/cuda/
-
+export PATH=/usr/local/cuda-8.0/bin${PATH:+:${PATH}}
+export CPATH=/usr/local/cuda-8.0/include${CPATH:+:${CPATH}}
+export LD_LIBRARY_PATH=/usr/local/cuda-8.0/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+export CXXFLAGS="-std=c++11"
+export CFLAGS="-std=c99"
 export CUDA_PATH=/usr/local/cuda/
 #You may also want to ad the following
-#export C_INCLUDE_PATH=/opt/cuda/include
+export C_INCLUDE_PATH=/opt/cuda/include
 
 export CXXFLAGS="-std=c++11"
 export CFLAGS="-std=c99"

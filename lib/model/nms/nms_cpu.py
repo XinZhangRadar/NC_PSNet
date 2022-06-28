@@ -4,7 +4,8 @@ import numpy as np
 import torch
 
 def nms_cpu(dets, thresh):
-    dets = dets.numpy()
+    #import pdb;pdb.set_trace()
+    dets = dets.cpu().numpy()
     x1 = dets[:, 0]
     y1 = dets[:, 1]
     x2 = dets[:, 2]
