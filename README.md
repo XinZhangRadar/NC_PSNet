@@ -4,6 +4,8 @@ This is the official implementation of ***PSNet*** (NeuroComputing), an object d
 **PSNet: Perspective-sensitive convolutional network for object detection [[Paper]](https://www.researchgate.net/profile/Xin-Zhang-25/publication/355510008_PSNet_Perspective-Sensitive_Convolutional_Network_for_Object_Detection/links/61b169a98429577d97ae6472/PSNet-Perspective-Sensitive-Convolutional-Network-for-Object-Detection.pdf)**  <br />
 XinZhang, Yicheng Liu, Chunlei Huo, Nuo Xu, Lingfeng Wang, Chunhong Pan<br />
 
+![intro](Network.jpg)
+
 ## Get Started 
 ## Preparation
 Clone the code
